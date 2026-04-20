@@ -69,10 +69,15 @@ export default function DraftTable({ roomCode, playerName, isHost, students }: D
     socket.on("room-updated", (updatedRoom) => {
       setRoom(updatedRoom);
     });
+
+    // Fetch current room state immediately in case we missed the initial
+    // room-updated event (race condition between server emit and React mount).
+    socket.emit("get-room", roomCode);
+
     return () => {
       socket.off("room-updated");
     };
-  }, []);
+  }, [roomCode]);
 
   const currentPlayer = room?.players.find((p: any) => p.name === playerName);
 

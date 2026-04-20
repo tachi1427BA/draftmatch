@@ -19,13 +19,22 @@ app.prepare().then(() => {
     handle(req, res, parsedUrl);
   });
 
-  const io = new Server(httpServer);
+  const io = new Server(httpServer, {
+    cors: { origin: "*" },
+    // Allow polling fallback for environments that restrict WebSocket upgrades.
+    transports: ["websocket", "polling"],
+  });
 
   // Track which room/player each socket belongs to for cleanup on disconnect.
   const socketMap = new Map<string, { roomCode: string; playerId: string }>();
 
   io.on("connection", (socket) => {
     console.log("Client connected:", socket.id);
+
+    socket.on("get-room", (roomCode: string) => {
+      const room = roomManager.getRoom(roomCode);
+      if (room) socket.emit("room-updated", room);
+    });
 
     socket.on("create-room", (playerName: string, callback) => {
       const room = roomManager.createRoom();
