@@ -35,13 +35,18 @@ export default function PlayerBoard({ player, students, compact = false }: Playe
       <div key={key} className={compact ? "flex flex-col items-center" : "flex flex-col items-center gap-1"}>
         <div className={`${size} bg-black/30 border border-white/20 rounded-lg overflow-hidden relative flex-shrink-0`}>
           {student ? (
-            <Image
-              src={student.icon}
-              alt={student.name}
-              fill
-              sizes={compact ? "48px" : "(max-width: 640px) 15vw, 10vw"}
-              className="object-cover object-top"
-            />
+            <>
+              <Image
+                src={student.icon}
+                alt={student.name}
+                fill
+                sizes={compact ? "48px" : "(max-width: 640px) 15vw, 10vw"}
+                className="object-cover object-top"
+              />
+              <div className="absolute top-1 left-1 rounded-full bg-black/70 text-[8px] uppercase px-2 py-0.5 text-white">
+                {student.role === 'striker' ? 'ST' : 'SP'}
+              </div>
+            </>
           ) : (
             <div className="w-full h-full flex items-center justify-center text-white/20">
               <span className="text-[8px]">{label}</span>

@@ -24,6 +24,25 @@ describe('DraftLogic', () => {
     expect(updatedRoom.currentPhase).toBe('abandoning')
   })
 
+  it('should allow selecting special students in early rounds and preserve role grouping', () => {
+    const room = roomManager.createRoom()
+    const p1 = roomManager.joinRoom(room.code, 'P1', true)
+    const p2 = roomManager.joinRoom(room.code, 'P2', false)
+
+    roomManager.submitPick(room.code, p1.id, 101, 'special')
+    roomManager.submitPick(room.code, p2.id, 101, 'special')
+
+    roomManager.resolvePicks(room.code)
+
+    const updatedRoom = roomManager.getRoom(room.code)!
+    const first = updatedRoom.players.find(p => p.id === p1.id)!
+    const second = updatedRoom.players.find(p => p.id === p2.id)!
+    expect(first.team.specials.length + second.team.specials.length).toBe(1)
+    expect([first.lastPickStatus, second.lastPickStatus]).toContain('won')
+    expect([first.lastPickStatus, second.lastPickStatus]).toContain('lost')
+    expect(updatedRoom.currentPhase).toBe('picking')
+  })
+
   it('should resolve duplicate picks by picking one winner', () => {
     const room = roomManager.createRoom()
     const p1 = roomManager.joinRoom(room.code, 'P1', true)

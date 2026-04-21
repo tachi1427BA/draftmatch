@@ -225,8 +225,14 @@ export default function DraftTable({ roomCode, playerName, isHost, students }: D
                     <div className="flex items-center gap-3">
                       <div className="relative w-10 h-10 rounded border border-blue-400 overflow-hidden">
                         <Image src={selectedStudent.icon} alt={selectedStudent.name} fill className="object-cover object-top" />
+                        <div className="absolute top-1 left-1 rounded-full bg-black/70 text-[9px] uppercase px-2 py-0.5 text-white">
+                          {selectedStudent.role === 'striker' ? 'ST' : 'SP'}
+                        </div>
                       </div>
-                      <span className="font-bold">{selectedStudent.name} を選択中</span>
+                      <div>
+                        <div className="font-bold">{selectedStudent.name} を選択中</div>
+                        <div className="text-xs text-white/60">{selectedStudent.role === 'striker' ? 'ストライカー' : 'スペシャル'}</div>
+                      </div>
                     </div>
                   ) : pendingPickStudent && currentPlayer.lastPickStatus === 'pending' ? (
                     <div className="flex items-center gap-3">

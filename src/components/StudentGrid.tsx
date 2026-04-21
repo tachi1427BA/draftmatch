@@ -22,9 +22,7 @@ export default function StudentGrid({ onSelect, selectedId, disabledIds = [], ro
   const [searchTerm, setSearchTerm] = useState("");
 
   const filteredStudents = students.filter((s) => {
-    const nameMatches = s.name.includes(searchTerm);
-    const roleMatches = round <= 4 ? s.role === 'striker' : s.role === 'special';
-    return nameMatches && roleMatches;
+    return s.name.includes(searchTerm);
   });
 
   return (
@@ -63,6 +61,9 @@ export default function StudentGrid({ onSelect, selectedId, disabledIds = [], ro
                   sizes="100px"
                   className="object-cover object-top"
                 />
+                <div className="absolute top-1 left-1 rounded-full bg-black/70 text-[9px] uppercase px-2 py-0.5 text-white">
+                  {student.role === 'striker' ? 'ST' : 'SP'}
+                </div>
                 <div className="absolute inset-x-0 bottom-0 bg-black/60 text-white text-[10px] py-0.5 text-center truncate px-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   {student.name}
                 </div>

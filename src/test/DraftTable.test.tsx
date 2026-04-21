@@ -23,7 +23,7 @@ vi.mock('@/lib/socket', () => {
 
 describe('DraftTable Component', () => {
   const mockStudents = [
-    { id: 1, name: 'Student 1', icon: '/icon1.png' }
+    { id: 1, name: 'Student 1', icon: '/icon1.png', role: 'striker' as const }
   ]
 
   it('renders room code and waiting status after socket update', async () => {

@@ -19,6 +19,7 @@ export interface Room {
     round: number;
     playerId: string;
     studentId: number;
+    studentRole: 'striker' | 'special';
     isReplacement: boolean;
   }[];
   abandonedStudentIds: number[];
@@ -76,14 +77,6 @@ export class RoomManager {
     const player = room.players.find(p => p.id === playerId);
     if (!player) throw new Error('Player not found');
 
-    // Rule validation: Round and Role
-    if (room.currentRound <= 4 && studentRole !== 'striker') {
-      throw new Error('1-4巡目はストライカーのみ指名可能です');
-    }
-    if (room.currentRound >= 5 && studentRole !== 'special') {
-      throw new Error('5-6巡目はスペシャルのみ指名可能です');
-    }
-
     // Rule validation: Availability
     // Block only students already on someone's team (definitively won) or abandoned.
     // Multiple players may pick the same student in the same round — conflicts are resolved by resolvePicks.
@@ -98,14 +91,15 @@ export class RoomManager {
     const isReplacement = player.lastPickStatus === 'abandoned';
 
     if (isReplacement) {
-      if (room.currentRound <= 4) player.team.strikers.push(studentId);
+      if (studentRole === 'striker') player.team.strikers.push(studentId);
       else player.team.specials.push(studentId);
-      
+
       player.lastPickStatus = 'finished_round';
       room.draftHistory.push({
         round: room.currentRound,
         playerId,
         studentId,
+        studentRole,
         isReplacement: true
       });
     } else {
@@ -118,6 +112,7 @@ export class RoomManager {
         round: room.currentRound,
         playerId,
         studentId,
+        studentRole,
         isReplacement: false
       });
     }
@@ -170,7 +165,7 @@ export class RoomManager {
       if (winners.includes(p.id)) {
         p.lastPickStatus = 'won';
         const pick = currentPicks.find(h => h.playerId === p.id)!;
-        if (room.currentRound <= 4) p.team.strikers.push(pick.studentId);
+        if (pick.studentRole === 'striker') p.team.strikers.push(pick.studentId);
         else p.team.specials.push(pick.studentId);
       } else if (losers.includes(p.id)) {
         p.lastPickStatus = 'lost';
@@ -192,14 +187,18 @@ export class RoomManager {
     if (!player) throw new Error('Player not found');
     if (player.lastPickStatus !== 'won') throw new Error('放棄できるのは獲得済みのプレイヤーのみです');
 
+    const winningPick = room.draftHistory.find(
+      h => h.playerId === playerId && h.round === room.currentRound && !h.isReplacement
+    );
+    if (!winningPick) throw new Error('勝利した指名が見つかりませんでした');
+
     if (abandon) {
-      const lastPickedId = room.currentRound <= 4 
-        ? player.team.strikers.pop() 
-        : player.team.specials.pop();
-      
-      if (lastPickedId) {
-        room.abandonedStudentIds.push(lastPickedId);
+      const targetArray = winningPick.studentRole === 'striker' ? player.team.strikers : player.team.specials;
+      const index = targetArray.indexOf(winningPick.studentId);
+      if (index !== -1) {
+        targetArray.splice(index, 1);
       }
+      room.abandonedStudentIds.push(winningPick.studentId);
       player.lastPickStatus = 'abandoned';
     } else {
       player.lastPickStatus = 'finished_round';
