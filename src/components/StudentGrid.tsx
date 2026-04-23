@@ -18,16 +18,22 @@ interface StudentGridProps {
   students: Student[];
 }
 
+type RoleFilter = "all" | "striker" | "special";
+
 export default function StudentGrid({ onSelect, selectedId, disabledIds = [], round, students }: StudentGridProps) {
   const [searchTerm, setSearchTerm] = useState("");
+  const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
 
   const filteredStudents = students.filter((s) => {
-    return s.name.includes(searchTerm);
+    const matchesSearch = s.name.includes(searchTerm);
+    const matchesRole = roleFilter === "all" || s.role === roleFilter;
+
+    return matchesSearch && matchesRole;
   });
 
   return (
     <div className="flex flex-col h-full bg-white/10 p-4 rounded-lg backdrop-blur-md">
-      <div className="mb-4">
+      <div className="mb-4 flex flex-col gap-3">
         <input
           type="text"
           placeholder="生徒名で検索..."
@@ -35,6 +41,32 @@ export default function StudentGrid({ onSelect, selectedId, disabledIds = [], ro
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
         />
+        <div className="flex flex-wrap gap-2">
+          {[
+            { value: "all" as const, label: "すべて" },
+            { value: "striker" as const, label: "ストライカー" },
+            { value: "special" as const, label: "スペシャル" },
+          ].map((option) => {
+            const isActive = roleFilter === option.value;
+
+            return (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => setRoleFilter(option.value)}
+                className={cn(
+                  "rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
+                  isActive
+                    ? "bg-blue-500 text-white"
+                    : "bg-white/10 text-white/70 hover:bg-white/15 hover:text-white"
+                )}
+                aria-pressed={isActive}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
       <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-2 overflow-y-auto max-h-[60vh] p-2">
         {filteredStudents.map((student) => {

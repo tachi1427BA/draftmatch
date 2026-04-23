@@ -134,4 +134,66 @@ describe('DraftLogic', () => {
     expect(finishedRoom.players[1].team.strikers).toHaveLength(4)
     expect(finishedRoom.players[1].team.specials).toHaveLength(2)
   })
+
+  it('should complete the sixth slot after abandoning and replacement pick in the final round', () => {
+    const room = roomManager.createRoom()
+    const p1 = roomManager.joinRoom(room.code, 'P1', true)
+    const p2 = roomManager.joinRoom(room.code, 'P2', false)
+    roomManager.startDraft(room.code)
+
+    const preparedRoom = roomManager.getRoom(room.code)!
+    preparedRoom.currentRound = 6
+    preparedRoom.players.find(p => p.id === p1.id)!.team = {
+      strikers: [101, 102, 103, 104],
+      specials: [201],
+    }
+    preparedRoom.players.find(p => p.id === p2.id)!.team = {
+      strikers: [105, 106, 107, 108],
+      specials: [202],
+    }
+    preparedRoom.players.forEach(player => {
+      player.lastPickStatus = 'pending'
+    })
+
+    roomManager.submitPick(room.code, p1.id, 301, 'special')
+    roomManager.submitPick(room.code, p2.id, 302, 'special')
+    roomManager.resolvePicks(room.code)
+
+    roomManager.abandonChoice(room.code, p1.id, true)
+    roomManager.abandonChoice(room.code, p2.id, false)
+    roomManager.submitPick(room.code, p1.id, 303, 'special')
+
+    const updatedRoom = roomManager.getRoom(room.code)!
+    const first = updatedRoom.players.find(p => p.id === p1.id)!
+    const second = updatedRoom.players.find(p => p.id === p2.id)!
+
+    expect(first.team.strikers).toHaveLength(4)
+    expect(first.team.specials).toHaveLength(2)
+    expect(first.team.specials).toContain(303)
+    expect(first.lastPickStatus).toBe('finished_round')
+    expect(second.team.strikers).toHaveLength(4)
+    expect(second.team.specials).toHaveLength(2)
+  })
+
+  it('should not allow selecting more than 4 strikers', () => {
+    const room = roomManager.createRoom()
+    const p1 = roomManager.joinRoom(room.code, 'P1', true)
+    const player = roomManager.getRoom(room.code)!.players.find(p => p.id === p1.id)!
+    player.team.strikers = [101, 102, 103, 104]
+
+    expect(() => {
+      roomManager.submitPick(room.code, p1.id, 105, 'striker')
+    }).toThrow('ストライカーは4人までしか選択できません')
+  })
+
+  it('should not allow selecting more than 2 specials', () => {
+    const room = roomManager.createRoom()
+    const p1 = roomManager.joinRoom(room.code, 'P1', true)
+    const player = roomManager.getRoom(room.code)!.players.find(p => p.id === p1.id)!
+    player.team.specials = [201, 202]
+
+    expect(() => {
+      roomManager.submitPick(room.code, p1.id, 203, 'special')
+    }).toThrow('スペシャルは2人までしか選択できません')
+  })
 })

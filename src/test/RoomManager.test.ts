@@ -43,9 +43,19 @@ describe('RoomManager', () => {
 
   it('should move to battling after round 6 finishes', () => {
     const room = roomManager.createRoom()
-    roomManager.joinRoom(room.code, 'Host', true)
-    roomManager.joinRoom(room.code, 'Guest', false)
+    const host = roomManager.joinRoom(room.code, 'Host', true)
+    const guest = roomManager.joinRoom(room.code, 'Guest', false)
     roomManager.startDraft(room.code)
+
+    const setupRoom = roomManager.getRoom(room.code)!
+    setupRoom.players.find(player => player.id === host.id)!.team = {
+      strikers: [101, 102, 103, 104],
+      specials: [201, 202],
+    }
+    setupRoom.players.find(player => player.id === guest.id)!.team = {
+      strikers: [105, 106, 107, 108],
+      specials: [203, 204],
+    }
 
     for (let i = 1; i < 6; i++) {
       roomManager.nextRound(room.code)
@@ -59,6 +69,27 @@ describe('RoomManager', () => {
 
     const battlingRoom = roomManager.getRoom(room.code)!
     expect(battlingRoom.status).toBe('battling')
+  })
+
+  it('should not move to battling before all players have 6 characters', () => {
+    const room = roomManager.createRoom()
+    const host = roomManager.joinRoom(room.code, 'Host', true)
+    const guest = roomManager.joinRoom(room.code, 'Guest', false)
+    roomManager.startDraft(room.code)
+
+    const setupRoom = roomManager.getRoom(room.code)!
+    setupRoom.currentRound = 6
+    setupRoom.players.find(player => player.id === host.id)!.team = {
+      strikers: [101, 102, 103, 104],
+      specials: [201],
+    }
+    setupRoom.players.find(player => player.id === guest.id)!.team = {
+      strikers: [105, 106, 107, 108],
+      specials: [202, 203],
+    }
+
+    expect(() => roomManager.nextRound(room.code)).toThrow('全プレイヤーの編成が完了していません')
+    expect(roomManager.getRoom(room.code)!.status).toBe('drafting')
   })
 
   it('should remove a disconnected player and promote a new host when needed', () => {

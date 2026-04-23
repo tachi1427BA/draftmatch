@@ -132,8 +132,12 @@ app.prepare().then(() => {
     });
 
     socket.on("next-round", (roomCode: string) => {
-      roomManager.nextRound(roomCode);
-      io.to(roomCode).emit("room-updated", roomManager.getRoom(roomCode));
+      try {
+        roomManager.nextRound(roomCode);
+        io.to(roomCode).emit("room-updated", roomManager.getRoom(roomCode));
+      } catch (e: any) {
+        console.error("Next round error:", e.message);
+      }
     });
 
     socket.on("start-draft", (roomCode: string) => {

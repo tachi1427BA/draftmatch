@@ -29,6 +29,20 @@ export interface Room {
 
 export class RoomManager {
   private rooms: Map<string, Room> = new Map();
+  private readonly maxStrikers = 4;
+  private readonly maxSpecials = 2;
+
+  private hasCompleteTeam(player: Player) {
+    return player.team.strikers.length === this.maxStrikers && player.team.specials.length === this.maxSpecials;
+  }
+
+  private canAcceptRole(player: Player, role: 'striker' | 'special') {
+    if (role === 'striker') {
+      return player.team.strikers.length < this.maxStrikers;
+    }
+
+    return player.team.specials.length < this.maxSpecials;
+  }
 
   private getConflictStudentIds(room: Room) {
     const activePlayerIds = new Set(room.players.map(player => player.id));
@@ -114,6 +128,12 @@ export class RoomManager {
 
     const player = room.players.find(p => p.id === playerId);
     if (!player) throw new Error('Player not found');
+
+    if (!this.canAcceptRole(player, studentRole)) {
+      throw new Error(studentRole === 'striker'
+        ? 'ストライカーは4人までしか選択できません'
+        : 'スペシャルは2人までしか選択できません');
+    }
 
     // Rule validation: Availability
     // Block only students already on someone's team (definitively won) or abandoned.
@@ -257,6 +277,10 @@ export class RoomManager {
     if (!room) return;
     
     if (room.currentRound >= 6) {
+      const isDraftComplete = room.players.every(player => this.hasCompleteTeam(player));
+      if (!isDraftComplete) {
+        throw new Error('全プレイヤーの編成が完了していません');
+      }
       room.status = 'battling';
     } else {
       room.currentRound++;

@@ -5,7 +5,7 @@ import { connectSocket, disconnectSocket, getSocket } from "@/lib/socket";
 import { Student } from "@/lib/studentLoader";
 import StudentGrid from "./StudentGrid";
 import PlayerBoard from "./PlayerBoard";
-import { Timer } from "lucide-react";
+import { Check, Copy, Timer } from "lucide-react";
 import Image from "next/image";
 
 interface DraftTableProps {
@@ -18,6 +18,7 @@ interface DraftTableProps {
 
 const BATTLE_DURATION_SECONDS = 10 * 60;
 const DEFAULT_BATTLE_DURATION_MINUTES = 10;
+const TIMER_SOUND_PATH = "/timer-end.wav";
 
 function formatCountdown(totalSeconds: number) {
   const safeSeconds = Math.max(0, totalSeconds);
@@ -25,29 +26,6 @@ function formatCountdown(totalSeconds: number) {
   const seconds = safeSeconds % 60;
 
   return `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
-}
-
-function playTimeUpSound() {
-  const AudioContextClass = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-  if (!AudioContextClass) return;
-
-  const audioContext = new AudioContextClass();
-  const oscillator = audioContext.createOscillator();
-  const gainNode = audioContext.createGain();
-
-  oscillator.type = "square";
-  oscillator.frequency.setValueAtTime(880, audioContext.currentTime);
-  gainNode.gain.setValueAtTime(0.0001, audioContext.currentTime);
-  gainNode.gain.exponentialRampToValueAtTime(0.2, audioContext.currentTime + 0.02);
-  gainNode.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.6);
-
-  oscillator.connect(gainNode);
-  gainNode.connect(audioContext.destination);
-  oscillator.start();
-  oscillator.stop(audioContext.currentTime + 0.6);
-  oscillator.onended = () => {
-    void audioContext.close();
-  };
 }
 
 /** Full-screen lottery animation shown while currentPhase === 'resolving'. */
@@ -104,7 +82,9 @@ export default function DraftTable({ roomCode, playerName, isHost, students, onL
   const [battleDurationSeconds, setBattleDurationSeconds] = useState(BATTLE_DURATION_SECONDS);
   const [battleDurationMinutesInput, setBattleDurationMinutesInput] = useState(String(DEFAULT_BATTLE_DURATION_MINUTES));
   const [connectionError, setConnectionError] = useState(false);
+  const [copyFeedback, setCopyFeedback] = useState<"idle" | "success">("idle");
   const hasPlayedTimeUpSound = useRef(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -202,8 +182,25 @@ export default function DraftTable({ roomCode, playerName, isHost, students, onL
     }
 
     hasPlayedTimeUpSound.current = true;
-    playTimeUpSound();
+    if (!audioRef.current) return;
+
+    audioRef.current.currentTime = 0;
+    void audioRef.current.play().catch((error) => {
+      console.error("Failed to play timer sound:", error);
+    });
   }, [battleSecondsLeft, battleStartedAt, room?.status]);
+
+  useEffect(() => {
+    if (copyFeedback !== "success") return;
+
+    const timeoutId = window.setTimeout(() => {
+      setCopyFeedback("idle");
+    }, 1500);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [copyFeedback]);
 
   const currentPlayer = room?.players.find((p: any) => p.name === playerName);
   const canManageRoom = currentPlayer?.isHost ?? isHost;
@@ -238,7 +235,31 @@ export default function DraftTable({ roomCode, playerName, isHost, students, onL
       const durationSeconds = safeMinutes * 60;
       setBattleDurationSeconds(durationSeconds);
       setBattleDurationMinutesInput(String(safeMinutes));
+      if (audioRef.current) {
+        audioRef.current.muted = true;
+        void audioRef.current.play()
+          .then(() => {
+            if (!audioRef.current) return;
+            audioRef.current.pause();
+            audioRef.current.currentTime = 0;
+            audioRef.current.muted = false;
+          })
+          .catch(() => {
+            if (audioRef.current) {
+              audioRef.current.muted = false;
+            }
+          });
+      }
       getSocket()?.emit("start-battle-timer", { roomCode, durationSeconds });
+    }
+  };
+
+  const copyRoomCode = async () => {
+    try {
+      await navigator.clipboard.writeText(roomCode);
+      setCopyFeedback("success");
+    } catch {
+      window.prompt("部屋コードをコピーしてください", roomCode);
     }
   };
 
@@ -265,7 +286,13 @@ export default function DraftTable({ roomCode, playerName, isHost, students, onL
     ...p.team.strikers,
     ...p.team.specials,
   ]);
-  const activeDisabledIds = [...teamStudentIds, ...(room.abandonedStudentIds ?? [])];
+  const currentPlayerRoleLockedIds = students
+    .filter(student =>
+      (student.role === 'striker' && currentPlayer.team.strikers.length >= 4) ||
+      (student.role === 'special' && currentPlayer.team.specials.length >= 2)
+    )
+    .map(student => student.id);
+  const activeDisabledIds = [...teamStudentIds, ...(room.abandonedStudentIds ?? []), ...currentPlayerRoleLockedIds];
 
   // Student submitted this round (shown in waiting bar).
   const pendingPickStudentId: number | undefined = room.draftHistory.find(
@@ -282,9 +309,14 @@ export default function DraftTable({ roomCode, playerName, isHost, students, onL
   const showConfirmBar =
     room.currentPhase === 'picking' ||
     currentPlayer.lastPickStatus === 'abandoned';
+  const allPlayersFinishedRound = room.players.every((p: any) => p.lastPickStatus === 'finished_round');
+  const allPlayersHaveFullTeams = room.players.every((p: any) => p.team.strikers.length === 4 && p.team.specials.length === 2);
+  const canAdvanceRound = canManageRoom && allPlayersFinishedRound && (room.currentRound < 6 || allPlayersHaveFullTeams);
 
   return (
-    <div className="flex flex-col h-screen bg-[#0a192f] text-white p-3 gap-3 overflow-hidden">
+    <div className="h-screen w-full overflow-hidden bg-[#0a192f]">
+      <audio ref={audioRef} src={TIMER_SOUND_PATH} preload="auto" />
+      <div className="flex h-screen w-full min-w-0 flex-col text-white p-3 gap-3 overflow-hidden">
       {/* Lottery overlay */}
       {room.currentPhase === 'resolving' && (room.conflictStudentIds ?? []).length > 0 && (
         <LotteryOverlay
@@ -295,11 +327,21 @@ export default function DraftTable({ roomCode, playerName, isHost, students, onL
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between bg-white/5 px-4 py-2.5 rounded-xl border border-white/10 flex-shrink-0">
-        <div className="flex flex-col">
-          <h1 className="text-lg font-bold flex items-center gap-2">
+      <div className="flex min-w-0 items-center justify-between gap-3 bg-white/5 px-4 py-2.5 rounded-xl border border-white/10 flex-shrink-0">
+        <div className="flex min-w-0 flex-col">
+          <h1 className="text-lg font-bold flex min-w-0 items-center gap-2">
             DraftMach
-            <span className="text-xs font-normal text-white/50">Room: {roomCode}</span>
+            <span className="min-w-0 truncate text-xs font-normal text-white/50">Room: {roomCode}</span>
+            <button
+              type="button"
+              onClick={copyRoomCode}
+              data-testid="copy-room-button"
+              className="inline-flex items-center gap-1 rounded-md border border-white/15 bg-white/5 px-2 py-1 text-[11px] font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+              aria-label="ルームIDをコピー"
+            >
+              {copyFeedback === "success" ? <Check size={12} /> : <Copy size={12} />}
+              <span>{copyFeedback === "success" ? "コピー済み" : "コピー"}</span>
+            </button>
           </h1>
           <div className="text-xs text-blue-400">
             {room.status === 'waiting' && "待機中... プレイヤーを待っています"}
@@ -307,7 +349,7 @@ export default function DraftTable({ roomCode, playerName, isHost, students, onL
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-shrink-0 items-center gap-3">
           {room.status === 'waiting' && canManageRoom && (
             <button
               onClick={startDraft}
@@ -331,11 +373,11 @@ export default function DraftTable({ roomCode, playerName, isHost, students, onL
       </div>
 
       {/* Main area (flex-1) */}
-      <div className="flex-1 flex flex-col gap-3 overflow-hidden min-h-0">
+      <div className="flex-1 flex min-w-0 flex-col gap-3 overflow-hidden min-h-0">
         {room.status === 'drafting' ? (
           <>
             {/* Draft content */}
-            <div className="flex-1 overflow-hidden min-h-0">
+            <div className="flex-1 overflow-hidden min-h-0 min-w-0">
               {room.currentPhase === 'abandoning' && currentPlayer.lastPickStatus !== 'abandoned' ? (
                 <div className="h-full flex flex-col items-center justify-center bg-white/5 rounded-2xl border border-white/10 p-8 text-center">
                   <h2 className="text-3xl font-bold mb-4 text-yellow-400">獲得確定！</h2>
@@ -354,10 +396,15 @@ export default function DraftTable({ roomCode, playerName, isHost, students, onL
                     <p className="text-lg text-white/60">他のプレイヤーの選択を待っています...</p>
                   )}
 
-                  {canManageRoom && room.players.every((p: any) => ['abandoned', 'finished_round'].includes(p.lastPickStatus)) && (
+                  {canAdvanceRound && (
                     <button onClick={nextRound} className="mt-8 bg-blue-600 hover:bg-blue-700 px-12 py-4 rounded-xl font-black text-2xl animate-bounce">
                       次の巡目へ進む
                     </button>
+                  )}
+                  {canManageRoom && allPlayersFinishedRound && room.currentRound >= 6 && !allPlayersHaveFullTeams && (
+                    <p className="mt-6 text-sm text-red-300">
+                      全プレイヤーが 4 ストライカー / 2 スペシャル になるまでバトルを開始できません
+                    </p>
                   )}
                 </div>
               ) : (
@@ -470,10 +517,11 @@ export default function DraftTable({ roomCode, playerName, isHost, students, onL
       </div>
 
       {/* Bottom strip: Player Boards (horizontal scroll) */}
-      <div className="flex gap-3 overflow-x-auto pb-1 flex-shrink-0">
+      <div className="flex w-full min-w-0 gap-3 overflow-x-auto pb-1 flex-shrink-0" data-testid="player-board-strip">
         {room.players.map((p: any) => (
           <PlayerBoard key={p.id} player={p} students={students} compact />
         ))}
+      </div>
       </div>
     </div>
   );
