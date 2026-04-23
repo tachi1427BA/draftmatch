@@ -28,6 +28,61 @@ app.prepare().then(() => {
   // Track which room/player each socket belongs to for cleanup on disconnect.
   const socketMap = new Map<string, { roomCode: string; playerId: string }>();
 
+  const emitRoomUpdate = (roomCode: string) => {
+    io.to(roomCode).emit("room-updated", roomManager.getRoom(roomCode));
+  };
+
+  const syncRoomState = (roomCode: string) => {
+    const room = roomManager.getRoom(roomCode);
+    if (!room) return;
+
+    const activePlayerIds = new Set(room.players.map(player => player.id));
+    const activePickers = room.players.filter(player => ['pending', 'lost'].includes(player.lastPickStatus));
+    const allSubmitted = activePickers.every(player =>
+      room.draftHistory.some(history =>
+        history.playerId === player.id &&
+        history.round === room.currentRound &&
+        !history.isReplacement
+      )
+    );
+
+    if (activePickers.length === 0 || !allSubmitted) {
+      emitRoomUpdate(roomCode);
+      return;
+    }
+
+    const currentPicks = room.draftHistory.filter(
+      history =>
+        history.round === room.currentRound &&
+        !history.isReplacement &&
+        activePlayerIds.has(history.playerId)
+    );
+    const picksByStudent: Record<number, string[]> = {};
+    currentPicks.forEach(history => {
+      if (!picksByStudent[history.studentId]) picksByStudent[history.studentId] = [];
+      picksByStudent[history.studentId].push(history.playerId);
+    });
+    const conflictIds = Object.keys(picksByStudent)
+      .filter(studentId => picksByStudent[parseInt(studentId, 10)].length > 1)
+      .map(Number);
+
+    if (conflictIds.length > 0) {
+      room.currentPhase = 'resolving';
+      room.conflictStudentIds = conflictIds;
+      emitRoomUpdate(roomCode);
+
+      setTimeout(() => {
+        if (!roomManager.getRoom(roomCode)) return;
+        roomManager.resolvePicks(roomCode);
+        emitRoomUpdate(roomCode);
+      }, 2500);
+      return;
+    }
+
+    roomManager.resolvePicks(roomCode);
+    emitRoomUpdate(roomCode);
+  };
+
   io.on("connection", (socket) => {
     console.log("Client connected:", socket.id);
 
@@ -60,46 +115,7 @@ app.prepare().then(() => {
     socket.on("submit-pick", ({ roomCode, playerId, student }: { roomCode: string, playerId: string, student: Student }) => {
       try {
         roomManager.submitPick(roomCode, playerId, student.id, student.role);
-        const room = roomManager.getRoom(roomCode);
-        if (room) {
-          // Resolve when all players who still need to pick (pending or lost) have submitted.
-          const activePickers = room.players.filter(p => ['pending', 'lost'].includes(p.lastPickStatus));
-          const allSubmitted = activePickers.every(p =>
-            room.draftHistory.some(h => h.playerId === p.id && h.round === room.currentRound && !h.isReplacement)
-          );
-          if (activePickers.length > 0 && allSubmitted) {
-            // Detect conflicts (multiple players picked the same student).
-            const currentPicks = room.draftHistory.filter(
-              h => h.round === room.currentRound && !h.isReplacement
-            );
-            const picksByStudent: Record<number, string[]> = {};
-            currentPicks.forEach(h => {
-              if (!picksByStudent[h.studentId]) picksByStudent[h.studentId] = [];
-              picksByStudent[h.studentId].push(h.playerId);
-            });
-            const conflictIds = Object.keys(picksByStudent)
-              .filter(id => picksByStudent[parseInt(id)].length > 1)
-              .map(Number);
-
-            if (conflictIds.length > 0) {
-              // Enter 'resolving' phase so clients can show the lottery animation.
-              room.currentPhase = 'resolving';
-              room.conflictStudentIds = conflictIds;
-              io.to(roomCode).emit("room-updated", roomManager.getRoom(roomCode));
-
-              // After 2.5 s, resolve picks and broadcast the result.
-              setTimeout(() => {
-                roomManager.resolvePicks(roomCode);
-                io.to(roomCode).emit("room-updated", roomManager.getRoom(roomCode));
-              }, 2500);
-            } else {
-              roomManager.resolvePicks(roomCode);
-              io.to(roomCode).emit("room-updated", roomManager.getRoom(roomCode));
-            }
-          } else {
-            io.to(roomCode).emit("room-updated", roomManager.getRoom(roomCode));
-          }
-        }
+        syncRoomState(roomCode);
       } catch (e: any) {
         // You could emit an error event here
         console.error("Pick error:", e.message);
@@ -125,18 +141,30 @@ app.prepare().then(() => {
       io.to(roomCode).emit("room-updated", roomManager.getRoom(roomCode));
     });
 
+    socket.on("start-battle-timer", ({ roomCode, durationSeconds }: { roomCode: string; durationSeconds: number }) => {
+      const room = roomManager.getRoom(roomCode);
+      if (!room || room.status !== "battling") return;
+      const safeDurationSeconds = Number.isFinite(durationSeconds) && durationSeconds > 0
+        ? Math.floor(durationSeconds)
+        : 10 * 60;
+
+      io.to(roomCode).emit("battle-timer-started", {
+        startedAt: Date.now(),
+        durationSeconds: safeDurationSeconds,
+      });
+    });
+
     socket.on("disconnect", () => {
       const info = socketMap.get(socket.id);
       if (info) {
         socketMap.delete(socket.id);
-        const { roomCode } = info;
-        // Remove the room if no sockets remain in it.
-        const roomSockets = [...socketMap.values()].filter(v => v.roomCode === roomCode);
-        if (roomSockets.length === 0) {
-          roomManager.removeRoom(roomCode);
+        const { roomCode, playerId } = info;
+        const updatedRoom = roomManager.removePlayer(roomCode, playerId);
+
+        if (!updatedRoom) {
           console.log(`Room ${roomCode} removed (all players disconnected)`);
         } else {
-          io.to(roomCode).emit("room-updated", roomManager.getRoom(roomCode));
+          syncRoomState(roomCode);
         }
       }
       console.log("Client disconnected:", socket.id);

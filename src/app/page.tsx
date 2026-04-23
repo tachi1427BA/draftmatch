@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import RoomSetup from "@/components/RoomSetup";
 import DraftTable from "@/components/DraftTable";
 import { fetchStudents, Student } from "@/lib/studentLoader";
+import { disconnectSocket } from "@/lib/socket";
 
 export default function Home() {
   const [students, setStudents] = useState<Student[]>([]);
@@ -27,6 +28,11 @@ export default function Home() {
     setRoomData({ roomCode, playerName, isHost });
   };
 
+  const handleLeave = () => {
+    disconnectSocket();
+    setRoomData(null);
+  };
+
   if (loading) {
     return (
       <main className="min-h-screen bg-[#050b16] flex flex-col items-center justify-center p-4">
@@ -43,6 +49,7 @@ export default function Home() {
           playerName={roomData.playerName}
           isHost={roomData.isHost}
           students={students}
+          onLeave={handleLeave}
         />
       ) : (
         <div className="flex flex-col items-center gap-8">

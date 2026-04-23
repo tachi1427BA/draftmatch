@@ -40,4 +40,38 @@ describe('RoomManager', () => {
       roomManager.joinRoom(room.code, 'Player1', false)
     }).toThrow('Player name already taken')
   })
+
+  it('should move to battling after round 6 finishes', () => {
+    const room = roomManager.createRoom()
+    roomManager.joinRoom(room.code, 'Host', true)
+    roomManager.joinRoom(room.code, 'Guest', false)
+    roomManager.startDraft(room.code)
+
+    for (let i = 1; i < 6; i++) {
+      roomManager.nextRound(room.code)
+    }
+
+    const beforeBattle = roomManager.getRoom(room.code)!
+    expect(beforeBattle.currentRound).toBe(6)
+    expect(beforeBattle.status).toBe('drafting')
+
+    roomManager.nextRound(room.code)
+
+    const battlingRoom = roomManager.getRoom(room.code)!
+    expect(battlingRoom.status).toBe('battling')
+  })
+
+  it('should remove a disconnected player and promote a new host when needed', () => {
+    const room = roomManager.createRoom()
+    const host = roomManager.joinRoom(room.code, 'Host', true)
+    const guest = roomManager.joinRoom(room.code, 'Guest', false)
+
+    roomManager.submitPick(room.code, host.id, 101, 'striker')
+    const updatedRoom = roomManager.removePlayer(room.code, host.id)!
+
+    expect(updatedRoom.players).toHaveLength(1)
+    expect(updatedRoom.players[0].id).toBe(guest.id)
+    expect(updatedRoom.players[0].isHost).toBe(true)
+    expect(updatedRoom.draftHistory).toEqual([])
+  })
 })

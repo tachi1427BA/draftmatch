@@ -106,4 +106,32 @@ describe('DraftLogic', () => {
     // Student 201 should appear in winner's team exactly once
     expect(winnerFinal.team.strikers.filter(id => id === 201)).toHaveLength(1)
   })
+
+  it('should reach battling after completing all 6 rounds', () => {
+    const room = roomManager.createRoom()
+    const p1 = roomManager.joinRoom(room.code, 'P1', true)
+    const p2 = roomManager.joinRoom(room.code, 'P2', false)
+    roomManager.startDraft(room.code)
+
+    for (let round = 1; round <= 6; round++) {
+      const firstPickBase = round * 100
+      roomManager.submitPick(room.code, p1.id, firstPickBase + 1, round <= 4 ? 'striker' : 'special')
+      roomManager.submitPick(room.code, p2.id, firstPickBase + 2, round <= 4 ? 'striker' : 'special')
+      roomManager.resolvePicks(room.code)
+
+      const currentRoom = roomManager.getRoom(room.code)!
+      currentRoom.players.forEach(player => {
+        roomManager.abandonChoice(room.code, player.id, false)
+      })
+
+      roomManager.nextRound(room.code)
+    }
+
+    const finishedRoom = roomManager.getRoom(room.code)!
+    expect(finishedRoom.status).toBe('battling')
+    expect(finishedRoom.players[0].team.strikers).toHaveLength(4)
+    expect(finishedRoom.players[0].team.specials).toHaveLength(2)
+    expect(finishedRoom.players[1].team.strikers).toHaveLength(4)
+    expect(finishedRoom.players[1].team.specials).toHaveLength(2)
+  })
 })

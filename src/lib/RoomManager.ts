@@ -30,6 +30,21 @@ export interface Room {
 export class RoomManager {
   private rooms: Map<string, Room> = new Map();
 
+  private getConflictStudentIds(room: Room) {
+    const activePlayerIds = new Set(room.players.map(player => player.id));
+    const picksByStudent: Record<number, number> = {};
+
+    room.draftHistory
+      .filter(h => h.round === room.currentRound && !h.isReplacement && activePlayerIds.has(h.playerId))
+      .forEach(h => {
+        picksByStudent[h.studentId] = (picksByStudent[h.studentId] ?? 0) + 1;
+      });
+
+    return Object.keys(picksByStudent)
+      .filter(studentId => picksByStudent[parseInt(studentId, 10)] > 1)
+      .map(Number);
+  }
+
   createRoom(): Room {
     const code = Math.random().toString(36).substring(2, 8).toUpperCase();
     const room: Room = {
@@ -68,6 +83,29 @@ export class RoomManager {
 
     room.players.push(player);
     return player;
+  }
+
+  removePlayer(code: string, playerId: string): Room | undefined {
+    const room = this.rooms.get(code);
+    if (!room) return undefined;
+
+    const removedPlayer = room.players.find(player => player.id === playerId);
+    if (!removedPlayer) return room;
+
+    room.players = room.players.filter(player => player.id !== playerId);
+    room.draftHistory = room.draftHistory.filter(history => history.playerId !== playerId);
+    room.conflictStudentIds = this.getConflictStudentIds(room);
+
+    if (removedPlayer.isHost && room.players.length > 0 && !room.players.some(player => player.isHost)) {
+      room.players[0].isHost = true;
+    }
+
+    if (room.players.length === 0) {
+      this.rooms.delete(code);
+      return undefined;
+    }
+
+    return room;
   }
 
   submitPick(code: string, playerId: string, studentId: number, studentRole: 'striker' | 'special') {

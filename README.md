@@ -35,3 +35,8 @@ npm test
 - **Backend**: Node.js + Socket.io (Custom Server)
 - **Testing**: Vitest, React Testing Library
 - **Data**: Google Spreadsheet から最新の生徒情報を自動取得
+
+## Railway メモ
+- Railway で sleep させたい場合は `Serverless` を有効にしてください。
+- このアプリはルーム作成・参加時にだけ Socket.IO 接続を開始する構成を想定しています。
+- 同一サービスへ常時 health check を当てると sleep しにくくなるため避けてください。

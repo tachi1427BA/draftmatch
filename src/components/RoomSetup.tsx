@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { socket } from "@/lib/socket";
+import { connectSocket } from "@/lib/socket";
 
 interface RoomSetupProps {
   onJoin: (roomCode: string, playerName: string, isHost: boolean) => void;
@@ -12,29 +12,41 @@ export default function RoomSetup({ onJoin }: RoomSetupProps) {
   const [playerName, setPlayerName] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  const createRoom = () => {
+  const createRoom = async () => {
     if (!playerName) return alert("名前を入力してください");
     setIsLoading(true);
 
-    socket.emit("create-room", playerName, ({ roomCode, player }: any) => {
-      onJoin(roomCode, playerName, true);
+    try {
+      const socket = await connectSocket();
+      socket.emit("create-room", playerName, ({ roomCode, player }: any) => {
+        onJoin(roomCode, playerName, true);
+        setIsLoading(false);
+      });
+    } catch {
+      alert("サーバーへの接続に失敗しました");
       setIsLoading(false);
-    });
+    }
   };
 
-  const joinRoom = () => {
+  const joinRoom = async () => {
     if (!roomCode || !playerName) return alert("部屋コードと名前を入力してください");
     setIsLoading(true);
 
-    socket.emit("join-room", { roomCode: roomCode.toUpperCase(), playerName }, ({ player, error }: any) => {
-      if (error) {
-        alert(error);
+    try {
+      const socket = await connectSocket();
+      socket.emit("join-room", { roomCode: roomCode.toUpperCase(), playerName }, ({ player, error }: any) => {
+        if (error) {
+          alert(error);
+          setIsLoading(false);
+          return;
+        }
+        onJoin(roomCode.toUpperCase(), playerName, false);
         setIsLoading(false);
-        return;
-      }
-      onJoin(roomCode.toUpperCase(), playerName, false);
+      });
+    } catch {
+      alert("サーバーへの接続に失敗しました");
       setIsLoading(false);
-    });
+    }
   };
 
   return (

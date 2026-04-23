@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { socket } from "@/lib/socket";
+import { useEffect, useRef, useState } from "react";
+import { connectSocket, disconnectSocket, getSocket } from "@/lib/socket";
 import { Student } from "@/lib/studentLoader";
 import StudentGrid from "./StudentGrid";
 import PlayerBoard from "./PlayerBoard";
@@ -13,6 +13,41 @@ interface DraftTableProps {
   playerName: string;
   isHost: boolean;
   students: Student[];
+  onLeave: () => void;
+}
+
+const BATTLE_DURATION_SECONDS = 10 * 60;
+const DEFAULT_BATTLE_DURATION_MINUTES = 10;
+
+function formatCountdown(totalSeconds: number) {
+  const safeSeconds = Math.max(0, totalSeconds);
+  const minutes = Math.floor(safeSeconds / 60);
+  const seconds = safeSeconds % 60;
+
+  return `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+}
+
+function playTimeUpSound() {
+  const AudioContextClass = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!AudioContextClass) return;
+
+  const audioContext = new AudioContextClass();
+  const oscillator = audioContext.createOscillator();
+  const gainNode = audioContext.createGain();
+
+  oscillator.type = "square";
+  oscillator.frequency.setValueAtTime(880, audioContext.currentTime);
+  gainNode.gain.setValueAtTime(0.0001, audioContext.currentTime);
+  gainNode.gain.exponentialRampToValueAtTime(0.2, audioContext.currentTime + 0.02);
+  gainNode.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.6);
+
+  oscillator.connect(gainNode);
+  gainNode.connect(audioContext.destination);
+  oscillator.start();
+  oscillator.stop(audioContext.currentTime + 0.6);
+  oscillator.onended = () => {
+    void audioContext.close();
+  };
 }
 
 /** Full-screen lottery animation shown while currentPhase === 'resolving'. */
@@ -61,29 +96,121 @@ function LotteryOverlay({ conflictStudentIds, room, students }: {
   );
 }
 
-export default function DraftTable({ roomCode, playerName, isHost, students }: DraftTableProps) {
+export default function DraftTable({ roomCode, playerName, isHost, students, onLeave }: DraftTableProps) {
   const [room, setRoom] = useState<any>(null);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+  const [battleSecondsLeft, setBattleSecondsLeft] = useState(BATTLE_DURATION_SECONDS);
+  const [battleStartedAt, setBattleStartedAt] = useState<number | null>(null);
+  const [battleDurationSeconds, setBattleDurationSeconds] = useState(BATTLE_DURATION_SECONDS);
+  const [battleDurationMinutesInput, setBattleDurationMinutesInput] = useState(String(DEFAULT_BATTLE_DURATION_MINUTES));
+  const [connectionError, setConnectionError] = useState(false);
+  const hasPlayedTimeUpSound = useRef(false);
 
   useEffect(() => {
-    socket.on("room-updated", (updatedRoom) => {
-      setRoom(updatedRoom);
-    });
+    let mounted = true;
+    let activeSocket = getSocket();
 
-    // Fetch current room state immediately in case we missed the initial
-    // room-updated event (race condition between server emit and React mount).
-    socket.emit("get-room", roomCode);
+    const handleRoomUpdated = (updatedRoom: any) => {
+      if (!mounted) return;
+      setRoom(updatedRoom);
+      setConnectionError(false);
+    };
+
+    const handleBattleTimerStarted = ({ startedAt, durationSeconds }: { startedAt: number; durationSeconds: number }) => {
+      if (!mounted) return;
+      setBattleStartedAt(startedAt);
+      setBattleDurationSeconds(durationSeconds);
+      setBattleDurationMinutesInput(String(Math.max(1, Math.floor(durationSeconds / 60))));
+      hasPlayedTimeUpSound.current = false;
+    };
+
+    const handleRoomExpired = () => {
+      if (!mounted) return;
+      alert("一定時間操作がなかったためルームを終了しました");
+      disconnectSocket();
+      onLeave();
+    };
+
+    async function setupSocket() {
+      try {
+        activeSocket = await connectSocket();
+        if (!mounted) return;
+
+        activeSocket.on("room-updated", handleRoomUpdated);
+        activeSocket.on("battle-timer-started", handleBattleTimerStarted);
+        activeSocket.on("room-expired", handleRoomExpired);
+        activeSocket.emit("get-room", roomCode);
+      } catch {
+        if (!mounted) return;
+        setConnectionError(true);
+      }
+    }
+
+    void setupSocket();
 
     return () => {
-      socket.off("room-updated");
+      mounted = false;
+      activeSocket?.off("room-updated", handleRoomUpdated);
+      activeSocket?.off("battle-timer-started", handleBattleTimerStarted);
+      activeSocket?.off("room-expired", handleRoomExpired);
     };
-  }, [roomCode]);
+  }, [onLeave, roomCode]);
+
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      disconnectSocket();
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (room?.status !== "battling") {
+      setBattleSecondsLeft(BATTLE_DURATION_SECONDS);
+      setBattleStartedAt(null);
+      setBattleDurationSeconds(BATTLE_DURATION_SECONDS);
+      setBattleDurationMinutesInput(String(DEFAULT_BATTLE_DURATION_MINUTES));
+      hasPlayedTimeUpSound.current = false;
+      return;
+    }
+
+    if (battleStartedAt == null) {
+      setBattleSecondsLeft(battleDurationSeconds);
+      return;
+    }
+
+    const updateCountdown = () => {
+      const elapsedSeconds = Math.floor((Date.now() - battleStartedAt) / 1000);
+      const remainingSeconds = Math.max(0, battleDurationSeconds - elapsedSeconds);
+      setBattleSecondsLeft(remainingSeconds);
+    };
+
+    updateCountdown();
+    const timerId = window.setInterval(updateCountdown, 1000);
+
+    return () => {
+      window.clearInterval(timerId);
+    };
+  }, [battleDurationSeconds, battleStartedAt, room?.status]);
+
+  useEffect(() => {
+    if (room?.status !== "battling" || battleStartedAt == null || battleSecondsLeft > 0 || hasPlayedTimeUpSound.current) {
+      return;
+    }
+
+    hasPlayedTimeUpSound.current = true;
+    playTimeUpSound();
+  }, [battleSecondsLeft, battleStartedAt, room?.status]);
 
   const currentPlayer = room?.players.find((p: any) => p.name === playerName);
+  const canManageRoom = currentPlayer?.isHost ?? isHost;
 
   const handlePick = () => {
     if (!selectedStudent || !currentPlayer) return;
-    socket.emit("submit-pick", {
+    getSocket()?.emit("submit-pick", {
       roomCode,
       playerId: currentPlayer.id,
       student: selectedStudent,
@@ -93,16 +220,43 @@ export default function DraftTable({ roomCode, playerName, isHost, students }: D
 
   const handleAbandon = (abandon: boolean) => {
     if (!currentPlayer) return;
-    socket.emit("abandon-choice", { roomCode, playerId: currentPlayer.id, abandon });
+    getSocket()?.emit("abandon-choice", { roomCode, playerId: currentPlayer.id, abandon });
   };
 
   const startDraft = () => {
-    if (isHost) socket.emit("start-draft", roomCode);
+    if (canManageRoom) getSocket()?.emit("start-draft", roomCode);
   };
 
   const nextRound = () => {
-    if (isHost) socket.emit("next-round", roomCode);
+    if (canManageRoom) getSocket()?.emit("next-round", roomCode);
   };
+
+  const startBattleTimer = () => {
+    if (canManageRoom && room?.status === "battling" && battleStartedAt == null) {
+      const parsedMinutes = parseInt(battleDurationMinutesInput, 10);
+      const safeMinutes = Number.isFinite(parsedMinutes) && parsedMinutes > 0 ? parsedMinutes : DEFAULT_BATTLE_DURATION_MINUTES;
+      const durationSeconds = safeMinutes * 60;
+      setBattleDurationSeconds(durationSeconds);
+      setBattleDurationMinutesInput(String(safeMinutes));
+      getSocket()?.emit("start-battle-timer", { roomCode, durationSeconds });
+    }
+  };
+
+  const handleLeave = () => {
+    disconnectSocket();
+    onLeave();
+  };
+
+  if (connectionError) {
+    return (
+      <div className="flex flex-col items-center gap-4 text-white">
+        <div>サーバーへの接続に失敗しました</div>
+        <button onClick={handleLeave} className="rounded-lg bg-white/10 px-4 py-2 text-white hover:bg-white/20">
+          トップに戻る
+        </button>
+      </div>
+    );
+  }
 
   if (!room || !currentPlayer) return <div className="text-white">読み込み中...</div>;
 
@@ -154,7 +308,7 @@ export default function DraftTable({ roomCode, playerName, isHost, students }: D
         </div>
 
         <div className="flex items-center gap-3">
-          {room.status === 'waiting' && isHost && (
+          {room.status === 'waiting' && canManageRoom && (
             <button
               onClick={startDraft}
               className="bg-blue-600 hover:bg-blue-700 px-4 py-1.5 rounded-lg font-bold text-sm transition-all"
@@ -200,7 +354,7 @@ export default function DraftTable({ roomCode, playerName, isHost, students }: D
                     <p className="text-lg text-white/60">他のプレイヤーの選択を待っています...</p>
                   )}
 
-                  {isHost && room.players.every((p: any) => ['abandoned', 'finished_round'].includes(p.lastPickStatus)) && (
+                  {canManageRoom && room.players.every((p: any) => ['abandoned', 'finished_round'].includes(p.lastPickStatus)) && (
                     <button onClick={nextRound} className="mt-8 bg-blue-600 hover:bg-blue-700 px-12 py-4 rounded-xl font-black text-2xl animate-bounce">
                       次の巡目へ進む
                     </button>
@@ -264,11 +418,47 @@ export default function DraftTable({ roomCode, playerName, isHost, students }: D
         ) : room.status === 'battling' ? (
           <div className="flex-1 flex flex-col items-center justify-center bg-white/5 rounded-2xl border border-white/20 p-12">
             <h2 className="text-5xl font-black mb-8 text-blue-500">BATTLE START!</h2>
-            <div className="flex items-center justify-center gap-4 text-6xl font-mono text-white mb-12">
-              <Timer size={48} className="text-blue-500" />
-              <span>30:00</span>
-            </div>
-            <button onClick={() => window.location.reload()} className="text-white/30 hover:text-white">
+            {battleStartedAt == null ? (
+              <div className="flex flex-col items-center gap-6 mb-12 text-center">
+                <div className="flex items-center justify-center gap-4 text-6xl font-mono text-white">
+                  <Timer size={48} className="text-blue-500" />
+                  <span>{formatCountdown(battleDurationSeconds)}</span>
+                </div>
+                {canManageRoom ? (
+                  <div className="flex flex-col items-center gap-4">
+                    <div className="flex items-center gap-3">
+                      <label htmlFor="battle-duration" className="text-white/70 text-sm">
+                        タイマー分数
+                      </label>
+                      <input
+                        id="battle-duration"
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={battleDurationMinutesInput}
+                        onChange={(event) => setBattleDurationMinutesInput(event.target.value)}
+                        className="w-24 rounded-lg border border-white/20 bg-black/20 px-3 py-2 text-center text-white"
+                      />
+                      <span className="text-white/70">分</span>
+                    </div>
+                    <button
+                      onClick={startBattleTimer}
+                      className="bg-blue-600 hover:bg-blue-700 px-8 py-3 rounded-xl font-bold text-xl transition-all"
+                    >
+                      タイマー開始
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-white/60">ホストがタイマーを開始するのを待っています...</p>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center justify-center gap-4 text-6xl font-mono text-white mb-12">
+                <Timer size={48} className="text-blue-500" />
+                <span>{formatCountdown(battleSecondsLeft)}</span>
+              </div>
+            )}
+            <button onClick={handleLeave} className="text-white/30 hover:text-white">
               トップに戻る
             </button>
           </div>
