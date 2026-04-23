@@ -32,6 +32,16 @@ export class RoomManager {
   private readonly maxStrikers = 4;
   private readonly maxSpecials = 2;
 
+  private createPlayer(name: string, isHost: boolean): Player {
+    return {
+      id: Math.random().toString(36).substring(2, 11),
+      name,
+      isHost,
+      team: { strikers: [], specials: [] },
+      lastPickStatus: 'pending',
+    };
+  }
+
   private hasCompleteTeam(player: Player) {
     return player.team.strikers.length === this.maxStrikers && player.team.specials.length === this.maxSpecials;
   }
@@ -87,13 +97,7 @@ export class RoomManager {
       throw new Error('Player name already taken');
     }
 
-    const player: Player = {
-      id: Math.random().toString(36).substring(2, 11),
-      name: playerName,
-      isHost,
-      team: { strikers: [], specials: [] },
-      lastPickStatus: 'pending'
-    };
+    const player = this.createPlayer(playerName, isHost);
 
     room.players.push(player);
     return player;
@@ -270,6 +274,24 @@ export class RoomManager {
     room.currentRound = 1;
     room.currentPhase = 'picking';
     room.players.forEach(p => p.lastPickStatus = 'pending');
+  }
+
+  restartRoom(code: string) {
+    const room = this.rooms.get(code);
+    if (!room) throw new Error('Room not found');
+
+    room.status = 'waiting';
+    room.currentRound = 1;
+    room.currentPhase = 'picking';
+    room.draftHistory = [];
+    room.abandonedStudentIds = [];
+    room.conflictStudentIds = [];
+    room.players.forEach(player => {
+      player.team = { strikers: [], specials: [] };
+      player.lastPickStatus = 'pending';
+    });
+
+    return room;
   }
 
   nextRound(code: string) {

@@ -158,6 +158,24 @@ app.prepare().then(() => {
       });
     });
 
+    socket.on("restart-room", (roomCode: string) => {
+      try {
+        roomManager.restartRoom(roomCode);
+        io.to(roomCode).emit("room-updated", roomManager.getRoom(roomCode));
+      } catch (e: any) {
+        console.error("Restart room error:", e.message);
+      }
+    });
+
+    socket.on("close-room", (roomCode: string) => {
+      try {
+        io.to(roomCode).emit("room-closed");
+        roomManager.removeRoom(roomCode);
+      } catch (e: any) {
+        console.error("Close room error:", e.message);
+      }
+    });
+
     socket.on("disconnect", () => {
       const info = socketMap.get(socket.id);
       if (info) {

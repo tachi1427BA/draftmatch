@@ -105,4 +105,38 @@ describe('RoomManager', () => {
     expect(updatedRoom.players[0].isHost).toBe(true)
     expect(updatedRoom.draftHistory).toEqual([])
   })
+
+  it('should restart the same room with cleared teams and waiting status', () => {
+    const room = roomManager.createRoom()
+    const host = roomManager.joinRoom(room.code, 'Host', true)
+    const guest = roomManager.joinRoom(room.code, 'Guest', false)
+    roomManager.startDraft(room.code)
+
+    const activeRoom = roomManager.getRoom(room.code)!
+    activeRoom.status = 'battling'
+    activeRoom.currentRound = 6
+    activeRoom.players.find(player => player.id === host.id)!.team = {
+      strikers: [101, 102, 103, 104],
+      specials: [201, 202],
+    }
+    activeRoom.players.find(player => player.id === guest.id)!.team = {
+      strikers: [105, 106, 107, 108],
+      specials: [203, 204],
+    }
+    activeRoom.draftHistory.push({ round: 6, playerId: host.id, studentId: 101, studentRole: 'striker', isReplacement: false })
+    activeRoom.abandonedStudentIds = [999]
+    activeRoom.conflictStudentIds = [888]
+
+    const restartedRoom = roomManager.restartRoom(room.code)
+
+    expect(restartedRoom.status).toBe('waiting')
+    expect(restartedRoom.currentRound).toBe(1)
+    expect(restartedRoom.currentPhase).toBe('picking')
+    expect(restartedRoom.players.every(player => player.team.strikers.length === 0 && player.team.specials.length === 0)).toBe(true)
+    expect(restartedRoom.players.every(player => player.lastPickStatus === 'pending')).toBe(true)
+    expect(restartedRoom.draftHistory).toEqual([])
+    expect(restartedRoom.abandonedStudentIds).toEqual([])
+    expect(restartedRoom.conflictStudentIds).toEqual([])
+  })
+
 })

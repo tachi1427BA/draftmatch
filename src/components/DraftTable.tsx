@@ -104,6 +104,12 @@ export default function DraftTable({ roomCode, playerName, isHost, students, onL
       hasPlayedTimeUpSound.current = false;
     };
 
+    const handleRoomClosed = () => {
+      if (!mounted) return;
+      disconnectSocket();
+      onLeave();
+    };
+
     const handleRoomExpired = () => {
       if (!mounted) return;
       alert("一定時間操作がなかったためルームを終了しました");
@@ -118,6 +124,7 @@ export default function DraftTable({ roomCode, playerName, isHost, students, onL
 
         activeSocket.on("room-updated", handleRoomUpdated);
         activeSocket.on("battle-timer-started", handleBattleTimerStarted);
+        activeSocket.on("room-closed", handleRoomClosed);
         activeSocket.on("room-expired", handleRoomExpired);
         activeSocket.emit("get-room", roomCode);
       } catch {
@@ -132,6 +139,7 @@ export default function DraftTable({ roomCode, playerName, isHost, students, onL
       mounted = false;
       activeSocket?.off("room-updated", handleRoomUpdated);
       activeSocket?.off("battle-timer-started", handleBattleTimerStarted);
+      activeSocket?.off("room-closed", handleRoomClosed);
       activeSocket?.off("room-expired", handleRoomExpired);
     };
   }, [onLeave, roomCode]);
@@ -254,6 +262,16 @@ export default function DraftTable({ roomCode, playerName, isHost, students, onL
     }
   };
 
+  const restartRoom = () => {
+    if (canManageRoom) getSocket()?.emit("restart-room", roomCode);
+  };
+
+  const returnToTop = () => {
+    if (canManageRoom) {
+      getSocket()?.emit("close-room", roomCode);
+    }
+  };
+
   const copyRoomCode = async () => {
     try {
       await navigator.clipboard.writeText(roomCode);
@@ -263,18 +281,10 @@ export default function DraftTable({ roomCode, playerName, isHost, students, onL
     }
   };
 
-  const handleLeave = () => {
-    disconnectSocket();
-    onLeave();
-  };
-
   if (connectionError) {
     return (
       <div className="flex flex-col items-center gap-4 text-white">
         <div>サーバーへの接続に失敗しました</div>
-        <button onClick={handleLeave} className="rounded-lg bg-white/10 px-4 py-2 text-white hover:bg-white/20">
-          トップに戻る
-        </button>
       </div>
     );
   }
@@ -312,6 +322,7 @@ export default function DraftTable({ roomCode, playerName, isHost, students, onL
   const allPlayersFinishedRound = room.players.every((p: any) => p.lastPickStatus === 'finished_round');
   const allPlayersHaveFullTeams = room.players.every((p: any) => p.team.strikers.length === 4 && p.team.specials.length === 2);
   const canAdvanceRound = canManageRoom && allPlayersFinishedRound && (room.currentRound < 6 || allPlayersHaveFullTeams);
+  const battleFinished = room.status === "battling" && battleStartedAt != null && battleSecondsLeft === 0;
   const playerBoardWidthClass =
     room.players.length <= 2
       ? "min-w-[320px] basis-[320px] md:min-w-[360px] md:basis-[360px]"
@@ -515,9 +526,29 @@ export default function DraftTable({ roomCode, playerName, isHost, students, onL
                 <span>{formatCountdown(battleSecondsLeft)}</span>
               </div>
             )}
-            <button onClick={handleLeave} className="text-white/30 hover:text-white">
-              トップに戻る
-            </button>
+            {battleFinished && (
+              canManageRoom ? (
+                <div className="mb-8 flex flex-col items-center gap-4">
+                  <p className="text-center text-white/70">バトル終了後の進行を選択してください</p>
+                  <div className="flex flex-wrap items-center justify-center gap-3">
+                    <button
+                      onClick={restartRoom}
+                      className="rounded-xl bg-blue-600 px-6 py-3 font-bold text-white transition-all hover:bg-blue-700"
+                    >
+                      同じ部屋で再ドラフト
+                    </button>
+                    <button
+                      onClick={returnToTop}
+                      className="rounded-xl bg-white/10 px-6 py-3 font-bold text-white transition-all hover:bg-white/20"
+                    >
+                      トップに戻る
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p className="mb-8 text-white/60">ホストが次の進行を選ぶのを待っています...</p>
+              )
+            )}
           </div>
         ) : (
           <div className="flex-1 flex items-center justify-center bg-white/5 rounded-2xl border border-dashed border-white/20 text-white/40">

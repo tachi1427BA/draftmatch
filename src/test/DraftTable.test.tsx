@@ -198,6 +198,8 @@ describe('DraftTable Component', () => {
     expect(screen.getByText('00:00')).toBeInTheDocument()
 
     expect(audioPlay).toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: '同じ部屋で再ドラフト' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'トップに戻る' })).toBeInTheDocument()
 
     await act(async () => {
       vi.advanceTimersByTime(5000)
@@ -247,6 +249,127 @@ describe('DraftTable Component', () => {
     })
 
     expect(screen.getByText('15:00')).toBeInTheDocument()
+  })
+
+  it('restarts the same room after battle when the host chooses it', async () => {
+    vi.useFakeTimers()
+
+    render(
+      <DraftTable
+        roomCode="TEST01"
+        playerName="HostPlayer"
+        isHost={true}
+        students={mockStudents}
+        onLeave={vi.fn()}
+      />
+    )
+
+    await act(async () => {
+      ;((await connectSocket()) as any)._trigger('room-updated', {
+        code: 'TEST01',
+        status: 'battling',
+        currentRound: 6,
+        currentPhase: 'abandoning',
+        players: [
+          { id: '1', name: 'HostPlayer', isHost: true, team: { strikers: [1, 2, 3, 4], specials: [5, 6] }, lastPickStatus: 'finished_round' }
+        ],
+        draftHistory: [],
+        abandonedStudentIds: [],
+        conflictStudentIds: []
+      })
+      ;((await connectSocket()) as any)._trigger('battle-timer-started', {
+        startedAt: Date.now() - 600000,
+        durationSeconds: 600
+      })
+    })
+
+    expect(screen.getByRole('button', { name: '同じ部屋で再ドラフト' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '同じ部屋で再ドラフト' }))
+
+    expect(getSocket()?.emit).toHaveBeenCalledWith('restart-room', 'TEST01')
+  })
+
+  it('returns to top after battle when the host chooses it', async () => {
+    vi.useFakeTimers()
+    const onLeave = vi.fn()
+
+    render(
+      <DraftTable
+        roomCode="TEST01"
+        playerName="HostPlayer"
+        isHost={true}
+        students={mockStudents}
+        onLeave={onLeave}
+      />
+    )
+
+    await act(async () => {
+      ;((await connectSocket()) as any)._trigger('room-updated', {
+        code: 'TEST01',
+        status: 'battling',
+        currentRound: 6,
+        currentPhase: 'abandoning',
+        players: [
+          { id: '1', name: 'HostPlayer', isHost: true, team: { strikers: [1, 2, 3, 4], specials: [5, 6] }, lastPickStatus: 'finished_round' }
+        ],
+        draftHistory: [],
+        abandonedStudentIds: [],
+        conflictStudentIds: []
+      })
+      ;((await connectSocket()) as any)._trigger('battle-timer-started', {
+        startedAt: Date.now() - 600000,
+        durationSeconds: 600
+      })
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'トップに戻る' }))
+
+    expect(getSocket()?.emit).toHaveBeenCalledWith('close-room', 'TEST01')
+
+    await act(async () => {
+      ;((await connectSocket()) as any)._trigger('room-closed', undefined)
+    })
+
+    expect(disconnectSocket).toHaveBeenCalled()
+    expect(onLeave).toHaveBeenCalled()
+  })
+
+  it('returns non-host players to top when the host closes the room', async () => {
+    const onLeave = vi.fn()
+
+    render(
+      <DraftTable
+        roomCode="TEST01"
+        playerName="GuestPlayer"
+        isHost={false}
+        students={mockStudents}
+        onLeave={onLeave}
+      />
+    )
+
+    await act(async () => {
+      ;((await connectSocket()) as any)._trigger('room-updated', {
+        code: 'TEST01',
+        status: 'battling',
+        currentRound: 6,
+        currentPhase: 'abandoning',
+        players: [
+          { id: '1', name: 'HostPlayer', isHost: true, team: { strikers: [1, 2, 3, 4], specials: [5, 6] }, lastPickStatus: 'finished_round' },
+          { id: '2', name: 'GuestPlayer', isHost: false, team: { strikers: [7, 8, 9, 10], specials: [11, 12] }, lastPickStatus: 'finished_round' }
+        ],
+        draftHistory: [],
+        abandonedStudentIds: [],
+        conflictStudentIds: []
+      })
+      ;((await connectSocket()) as any)._trigger('battle-timer-started', {
+        startedAt: Date.now() - 600000,
+        durationSeconds: 600
+      })
+      ;((await connectSocket()) as any)._trigger('room-closed', undefined)
+    })
+
+    expect(disconnectSocket).toHaveBeenCalled()
+    expect(onLeave).toHaveBeenCalled()
   })
 
   it('shows waiting message for non-host players before the timer starts', async () => {
@@ -489,37 +612,4 @@ describe('DraftTable Component', () => {
     expect(boards[0]).toHaveClass('min-w-[208px]', 'basis-[208px]')
   })
 
-  it('disconnects and leaves when returning to top', async () => {
-    const onLeave = vi.fn()
-
-    render(
-      <DraftTable
-        roomCode="TEST01"
-        playerName="HostPlayer"
-        isHost={true}
-        students={mockStudents}
-        onLeave={onLeave}
-      />
-    )
-
-    await act(async () => {
-      ;((await connectSocket()) as any)._trigger('room-updated', {
-        code: 'TEST01',
-        status: 'battling',
-        currentRound: 6,
-        currentPhase: 'abandoning',
-        players: [
-          { id: '1', name: 'HostPlayer', isHost: true, team: { strikers: [1, 2, 3, 4], specials: [5, 6] }, lastPickStatus: 'finished_round' }
-        ],
-        draftHistory: [],
-        abandonedStudentIds: [],
-        conflictStudentIds: []
-      })
-    })
-
-    fireEvent.click(screen.getByRole('button', { name: 'トップに戻る' }))
-
-    expect(disconnectSocket).toHaveBeenCalled()
-    expect(onLeave).toHaveBeenCalled()
-  })
 })
