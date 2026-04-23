@@ -425,6 +425,70 @@ describe('DraftTable Component', () => {
     expect(screen.queryByText('P2')).not.toBeInTheDocument()
   })
 
+  it('uses wider player boards when there are fewer players', async () => {
+    render(
+      <DraftTable
+        roomCode="TEST01"
+        playerName="HostPlayer"
+        isHost={true}
+        students={mockStudents}
+        onLeave={vi.fn()}
+      />
+    )
+
+    await act(async () => {
+      ;((await connectSocket()) as any)._trigger('room-updated', {
+        code: 'TEST01',
+        status: 'waiting',
+        currentRound: 1,
+        currentPhase: 'picking',
+        players: [
+          { id: '1', name: 'HostPlayer', isHost: true, team: { strikers: [], specials: [] }, lastPickStatus: 'pending' },
+          { id: '2', name: 'GuestPlayer', isHost: false, team: { strikers: [], specials: [] }, lastPickStatus: 'pending' },
+        ],
+        draftHistory: [],
+        conflictStudentIds: []
+      })
+    })
+
+    const boards = screen.getAllByTestId('compact-player-board')
+    expect(boards[0]).toHaveClass('min-w-[320px]', 'basis-[320px]')
+  })
+
+  it('uses narrower player boards when there are more players', async () => {
+    render(
+      <DraftTable
+        roomCode="TEST01"
+        playerName="HostPlayer"
+        isHost={true}
+        students={mockStudents}
+        onLeave={vi.fn()}
+      />
+    )
+
+    await act(async () => {
+      ;((await connectSocket()) as any)._trigger('room-updated', {
+        code: 'TEST01',
+        status: 'waiting',
+        currentRound: 1,
+        currentPhase: 'picking',
+        players: [
+          { id: '1', name: 'HostPlayer', isHost: true, team: { strikers: [], specials: [] }, lastPickStatus: 'pending' },
+          { id: '2', name: 'GuestPlayer1', isHost: false, team: { strikers: [], specials: [] }, lastPickStatus: 'pending' },
+          { id: '3', name: 'GuestPlayer2', isHost: false, team: { strikers: [], specials: [] }, lastPickStatus: 'pending' },
+          { id: '4', name: 'GuestPlayer3', isHost: false, team: { strikers: [], specials: [] }, lastPickStatus: 'pending' },
+          { id: '5', name: 'GuestPlayer4', isHost: false, team: { strikers: [], specials: [] }, lastPickStatus: 'pending' },
+          { id: '6', name: 'GuestPlayer5', isHost: false, team: { strikers: [], specials: [] }, lastPickStatus: 'pending' },
+        ],
+        draftHistory: [],
+        conflictStudentIds: []
+      })
+    })
+
+    const boards = screen.getAllByTestId('compact-player-board')
+    expect(boards[0]).toHaveClass('min-w-[208px]', 'basis-[208px]')
+  })
+
   it('disconnects and leaves when returning to top', async () => {
     const onLeave = vi.fn()
 

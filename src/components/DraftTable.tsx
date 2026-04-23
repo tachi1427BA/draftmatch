@@ -312,11 +312,21 @@ export default function DraftTable({ roomCode, playerName, isHost, students, onL
   const allPlayersFinishedRound = room.players.every((p: any) => p.lastPickStatus === 'finished_round');
   const allPlayersHaveFullTeams = room.players.every((p: any) => p.team.strikers.length === 4 && p.team.specials.length === 2);
   const canAdvanceRound = canManageRoom && allPlayersFinishedRound && (room.currentRound < 6 || allPlayersHaveFullTeams);
+  const playerBoardWidthClass =
+    room.players.length <= 2
+      ? "min-w-[320px] basis-[320px] md:min-w-[360px] md:basis-[360px]"
+      : room.players.length === 3
+        ? "min-w-[280px] basis-[280px] md:min-w-[320px] md:basis-[320px]"
+        : room.players.length === 4
+          ? "min-w-[248px] basis-[248px] md:min-w-[280px] md:basis-[280px]"
+          : room.players.length === 5
+            ? "min-w-[224px] basis-[224px] md:min-w-[252px] md:basis-[252px]"
+            : "min-w-[208px] basis-[208px] md:min-w-[228px] md:basis-[228px]";
 
   return (
-    <div className="h-screen w-full overflow-hidden bg-[#0a192f]">
+    <div className="h-full w-full overflow-hidden bg-[#0a192f]">
       <audio ref={audioRef} src={TIMER_SOUND_PATH} preload="auto" />
-      <div className="flex h-screen w-full min-w-0 flex-col text-white p-3 gap-3 overflow-hidden">
+      <div className="flex h-full w-full min-w-0 flex-col text-white p-3 gap-3 overflow-hidden">
       {/* Lottery overlay */}
       {room.currentPhase === 'resolving' && (room.conflictStudentIds ?? []).length > 0 && (
         <LotteryOverlay
@@ -517,9 +527,15 @@ export default function DraftTable({ roomCode, playerName, isHost, students, onL
       </div>
 
       {/* Bottom strip: Player Boards (horizontal scroll) */}
-      <div className="flex w-full min-w-0 gap-3 overflow-x-auto pb-1 flex-shrink-0" data-testid="player-board-strip">
+      <div className="flex w-full min-w-0 gap-3 overflow-x-auto py-1 flex-shrink-0" data-testid="player-board-strip">
         {room.players.map((p: any) => (
-          <PlayerBoard key={p.id} player={p} students={students} compact />
+          <PlayerBoard
+            key={p.id}
+            player={p}
+            students={students}
+            compact
+            compactWidthClassName={playerBoardWidthClass}
+          />
         ))}
       </div>
       </div>

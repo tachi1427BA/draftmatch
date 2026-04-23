@@ -30,8 +30,21 @@ describe("PlayerBoard", () => {
   it("renders the compact board with a full-width slot row", () => {
     render(<PlayerBoard player={player} students={students} compact />);
 
-    expect(screen.getByTestId("compact-player-board")).toHaveClass("min-w-[176px]");
+    expect(screen.getByTestId("compact-player-board")).toHaveClass("min-w-[220px]");
     expect(screen.getByTestId("compact-slot-row")).toHaveClass("w-full", "min-w-0");
+  });
+
+  it("accepts a custom compact width class", () => {
+    render(
+      <PlayerBoard
+        player={player}
+        students={students}
+        compact
+        compactWidthClassName="min-w-[320px] basis-[320px]"
+      />
+    );
+
+    expect(screen.getByTestId("compact-player-board")).toHaveClass("min-w-[320px]", "basis-[320px]");
   });
 
   it("renders all six compact slots inside the board", () => {

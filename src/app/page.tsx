@@ -42,7 +42,7 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-[#050b16] flex items-center justify-center p-4">
+    <main className={roomData ? "h-dvh overflow-hidden bg-[#050b16]" : "min-h-screen bg-[#050b16] flex items-center justify-center p-4"}>
       {roomData ? (
         <DraftTable
           roomCode={roomData.roomCode}
