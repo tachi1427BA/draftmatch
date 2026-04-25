@@ -141,8 +141,27 @@ app.prepare().then(() => {
     });
 
     socket.on("start-draft", (roomCode: string) => {
+      const room = roomManager.getRoom(roomCode);
+      if (!room) return;
+
       roomManager.startDraft(roomCode);
-      io.to(roomCode).emit("room-updated", roomManager.getRoom(roomCode));
+      const startedRoom = roomManager.getRoom(roomCode);
+
+      console.log(
+        "[draft-start] room " + roomCode + " members:",
+        startedRoom?.players.map(player => ({
+          id: player.id,
+          name: player.name,
+          isHost: player.isHost,
+          lastPickStatus: player.lastPickStatus,
+          team: {
+            strikers: player.team.strikers.length,
+            specials: player.team.specials.length,
+          },
+        }))
+      );
+
+      io.to(roomCode).emit("room-updated", startedRoom);
     });
 
     socket.on("start-battle-timer", ({ roomCode, durationSeconds }: { roomCode: string; durationSeconds: number }) => {
